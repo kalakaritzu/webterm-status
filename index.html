@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>webterm</title>
+<style>
+  body {
+    font-family: monospace;
+    background: #111;
+    color: #eee;
+    max-width: 480px;
+    margin: 60px auto;
+    padding: 0 20px;
+    line-height: 1.6;
+  }
+  input, button {
+    font-family: monospace;
+    font-size: 14px;
+    background: #222;
+    color: #eee;
+    border: 1px solid #444;
+    padding: 4px 8px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: #333; }
+  #status { display: none; }
+  p { margin: 4px 0; }
+  a { color: #6cf; }
+  #checked { color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h2>webterm</h2>
+
+<div id="login">
+  <p>Password: <input id="pw" type="password" autocomplete="off" /></p>
+  <p id="err" style="color: #f66; display: none;">Wrong password.</p>
+</div>
+
+<div id="status">
+  <p>Status: <b id="s-status">checking...</b></p>
+  <p>URL: <span id="s-url">&mdash;</span></p>
+  <p>Login: <span id="s-login">&mdash;</span></p>
+  <p>Updated: <span id="s-updated">&mdash;</span></p>
+  <p><button id="check-btn" type="button">Check now</button> <span id="checked"></span></p>
+  <p><small>Auto-checks every 15s. The URL changes each time webterm restarts.</small></p>
+</div>
+
+<script>
+  // This relay URL is the one thing that needs manual updating -- it
+  // rotates whenever the laptop reboots (a free Cloudflare quick
+  // tunnel, same as webterm's own). Update it and push to GitHub Pages
+  // when that happens; see the AlexanderOS project README.
+  const RELAY_URL = "https://nano-recommends-sudden-edges.trycloudflare.com/status.json";
+  const POLL_MS = 15000;
+
+  const PW_HASH = "a2ff67105567d0c4e008ad30773e0ede661723231636e778548cd8667f6befdb";
+
+  async function sha256Hex(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  let polling = null;
+
+  async function refresh() {
+    const checkedEl = document.getElementById("checked");
+    try {
+      const res = await fetch(RELAY_URL, { cache: "no-store" });
+      const data = await res.json();
+      document.getElementById("s-status").textContent = data.status.toUpperCase();
+      document.getElementById("s-url").innerHTML = data.url
+        ? '<a href="' + data.url + '">' + data.url + "</a>"
+        : "not running";
+      document.getElementById("s-login").textContent = data.login || "—";
+      document.getElementById("s-updated").textContent = data.updated
+        ? new Date(data.updated).toLocaleString()
+        : "—";
+      checkedEl.textContent = "last checked " + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById("s-status").textContent = "UNKNOWN (relay unreachable)";
+      checkedEl.textContent = "last checked " + new Date().toLocaleTimeString() + " — failed";
+    }
+  }
+
+  function show() {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("status").style.display = "block";
+    refresh();
+    if (!polling) polling = setInterval(refresh, POLL_MS);
+  }
+
+  document.getElementById("check-btn").addEventListener("click", refresh);
+
+  const pw = document.getElementById("pw");
+  pw.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    if ((await sha256Hex(pw.value)) === PW_HASH) {
+      try { sessionStorage.setItem("webterm_unlocked", "1"); } catch (e) {}
+      show();
+    } else {
+      document.getElementById("err").style.display = "block";
+      pw.value = "";
+    }
+  });
+
+  try {
+    if (sessionStorage.getItem("webterm_unlocked") === "1") show();
+  } catch (e) {}
+</script>
+
+</body>
+</html>
